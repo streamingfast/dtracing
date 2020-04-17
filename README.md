@@ -1,9 +1,12 @@
-## dfuse Tracing Library
+# dfuse Tracing Library
 
+[![reference](https://img.shields.io/badge/godoc-reference-5272B4.svg?style=flat-square)](https://pkg.go.dev/github.com/dfuse-io/dtracing)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 This repository contains all common stuff around trace(s) handling across our
 various services
 
-### Philosophy
+
+## Philosophy
 
 The package provides a quick setup function with sensible defaults that can be used across
 all our micro-services in one shot.
@@ -16,3 +19,20 @@ ZipKin exporter.
 
 For easier customization in package, we also exposes all `Register*` functions so it's possible
 to easily customize the behavior.
+
+
+## Contributing
+
+**Issues and PR in this repo related strictly to the dtracing library.**
+
+Report any protocol-specific issues in their
+[respective repositories](https://github.com/dfuse-io/dfuse#protocols)
+
+**Please first refer to the general
+[dfuse contribution guide](https://github.com/dfuse-io/dfuse/blob/master/CONTRIBUTING.md)**,
+if you wish to contribute to this code base.
+
+
+## License
+
+[Apache 2.0](LICENSE)
