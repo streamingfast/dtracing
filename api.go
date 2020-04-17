@@ -221,9 +221,10 @@ func RegisterZipkinExporter(serviceName string, zipkinURL string) error {
 // a development environment. When file `/.dockerenv` is present,
 // assuming it's production, development otherwise
 func IsProductionEnvironment() bool {
+	gcp := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
 	_, err := os.Stat("/.dockerenv")
 
-	return !os.IsNotExist(err)
+	return gcp != "" && !os.IsNotExist(err)
 }
 
 func samplerOptionOrDefault(options []interface{}, defaultSampler trace.Sampler) trace.Sampler {
