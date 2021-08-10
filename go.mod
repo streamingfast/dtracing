@@ -1,4 +1,4 @@
-module github.com/dfuse-io/dtracing
+module github.com/streamingfast/dtracing
 
 require (
 	contrib.go.opencensus.io/exporter/stackdriver v0.12.6
