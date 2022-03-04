@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/streamingfast/logging"
 	"go.opencensus.io/trace"
 	"go.uber.org/zap"
 )
@@ -46,6 +47,8 @@ func StartSpanWithSampler(ctx context.Context, name string, sampler trace.Sample
 // StartSpanWithSamplerA starts a `trace.Span` just like `StartSpanA` accepting the same set of
 // arguments alongside a new `sampler` value for the trace.
 func StartSpanWithSamplerA(ctx context.Context, name string, sampler trace.Sampler, attributes ...trace.Attribute) (context.Context, *trace.Span) {
+	logger := logging.Logger(ctx, zlog)
+
 	var startOptions []trace.StartOption
 	if sampler != nil {
 		startOptions = append(startOptions, trace.WithSampler(sampler))
@@ -87,14 +90,14 @@ func StartFreshSpanWithSamplerA(ctx context.Context, name string, sampler trace.
 	return childCtx, span
 }
 
-func keyedAttributesToTraceAttributes(keyedAttributes []interface{}) []trace.Attribute {
+func keyedAttributesToTraceAttributes(logger *zap.Logger, keyedAttributes []interface{}) []trace.Attribute {
 	keyedAttributeCount := len(keyedAttributes)
 	if keyedAttributeCount <= 0 {
 		return nil
 	}
 
 	if keyedAttributeCount%2 != 0 {
-		zlog.Panic("keyedAttributes parameters should be a multiple of 2", zap.Any("keyed_attributes", keyedAttributes))
+		logger.Panic("keyedAttributes parameters should be a multiple of 2", zap.Any("keyed_attributes", keyedAttributes))
 	}
 
 	attributes := make([]trace.Attribute, keyedAttributeCount/2)
@@ -113,7 +116,7 @@ func keyedAttributesToTraceAttributes(keyedAttributes []interface{}) []trace.Att
 		case string:
 			attributes[attributeIndex] = trace.StringAttribute(key, v)
 		default:
-			zlog.Panic("trace attribute must be a integer, a boolean or a string/stringer", zap.String("type", fmt.Sprintf("%T", value)))
+			logger.Panic("trace attribute must be a integer, a boolean or a string/stringer", zap.String("type", fmt.Sprintf("%T", value)))
 		}
 	}
 
@@ -155,8 +158,7 @@ func toInt64(value interface{}) int64 {
 		return int64(v)
 	case uint16:
 		return int64(v)
+	default:
+		panic("Value should be castable to int64")
 	}
-
-	zlog.Panic("Value should be castable to int64")
-	return 0
 }
