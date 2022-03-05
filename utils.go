@@ -30,7 +30,9 @@ import (
 // If you are creating your span in a tight loop, you are better off using `StartSpanA`
 // which accepts `trace.Attribute` directly.
 func StartSpan(ctx context.Context, name string, keyedAttributes ...interface{}) (context.Context, *trace.Span) {
-	return StartSpanWithSamplerA(ctx, name, nil, keyedAttributesToTraceAttributes(keyedAttributes)...)
+	logger := logging.Logger(ctx, zlog)
+
+	return StartSpanWithSamplerA(ctx, name, nil, keyedAttributesToTraceAttributes(logger, keyedAttributes)...)
 }
 
 // StartSpanA starts a `trace.Span` which accepts a variadic list of `trace.Attribute` directly.
@@ -41,14 +43,14 @@ func StartSpanA(ctx context.Context, name string, attributes ...trace.Attribute)
 // StartSpanWithSampler starts a `trace.Span` just like `StartSpan` accepting the same set of
 // arguments alongside a new `sampler`.
 func StartSpanWithSampler(ctx context.Context, name string, sampler trace.Sampler, keyedAttributes ...interface{}) (context.Context, *trace.Span) {
-	return StartSpanWithSamplerA(ctx, name, sampler, keyedAttributesToTraceAttributes(keyedAttributes)...)
+	logger := logging.Logger(ctx, zlog)
+
+	return StartSpanWithSamplerA(ctx, name, sampler, keyedAttributesToTraceAttributes(logger, keyedAttributes)...)
 }
 
 // StartSpanWithSamplerA starts a `trace.Span` just like `StartSpanA` accepting the same set of
 // arguments alongside a new `sampler` value for the trace.
 func StartSpanWithSamplerA(ctx context.Context, name string, sampler trace.Sampler, attributes ...trace.Attribute) (context.Context, *trace.Span) {
-	logger := logging.Logger(ctx, zlog)
-
 	var startOptions []trace.StartOption
 	if sampler != nil {
 		startOptions = append(startOptions, trace.WithSampler(sampler))
@@ -62,7 +64,9 @@ func StartSpanWithSamplerA(ctx context.Context, name string, sampler trace.Sampl
 
 // StartFreshSpan has exact same behavior as StartSpan expect it always starts new fresh trace & span
 func StartFreshSpan(ctx context.Context, name string, keyedAttributes ...interface{}) (context.Context, *trace.Span) {
-	return StartFreshSpanWithSamplerA(ctx, name, nil, keyedAttributesToTraceAttributes(keyedAttributes)...)
+	logger := logging.Logger(ctx, zlog)
+
+	return StartFreshSpanWithSamplerA(ctx, name, nil, keyedAttributesToTraceAttributes(logger, keyedAttributes)...)
 }
 
 // StartFreshSpanWithSamplerA has exact same behavior as StartSpanWithSamplerA expect it always starts new fresh trace & span
@@ -72,7 +76,9 @@ func StartFreshSpanA(ctx context.Context, name string, attributes ...trace.Attri
 
 // StartFreshSpanWithSampler has exact same behavior as StartSpanWithSampler expect it always starts new fresh trace & span
 func StartFreshSpanWithSampler(ctx context.Context, name string, sampler trace.Sampler, keyedAttributes ...interface{}) (context.Context, *trace.Span) {
-	return StartFreshSpanWithSamplerA(ctx, name, sampler, keyedAttributesToTraceAttributes(keyedAttributes)...)
+	logger := logging.Logger(ctx, zlog)
+
+	return StartFreshSpanWithSamplerA(ctx, name, sampler, keyedAttributesToTraceAttributes(logger, keyedAttributes)...)
 }
 
 var emptySpanContext = trace.SpanContext{}
