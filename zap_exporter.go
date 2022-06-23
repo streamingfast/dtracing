@@ -15,8 +15,9 @@
 package dtracing
 
 import (
-	"go.opencensus.io/stats/view"
-	"go.opencensus.io/trace"
+	"context"
+
+	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/zap"
 )
 
@@ -25,25 +26,35 @@ type zapExporter struct{}
 // Compile time assertion that the exporter implements trace.Exporter
 var _ trace.Exporter = (*zapExporter)(nil)
 
-func (exporter *zapExporter) ExportSpan(span *trace.SpanData) {
-	elapsed := span.EndTime.Sub(span.StartTime)
+func (exporter *zapExporter) Shutdown(ctx context.Context) {}
+func (exporter *zapExporter) ExportSpans(ctx context.Context, spans []trace.ReadOnlySpan) {
+	for _, s := range spans {
+		exporter.exportSpan(s)
+	}
+}
+func (exporter *zapExporter) exportSpan(span trace.ReadOnlySpan) {
+	elapsed := span.EndTime().Sub(span.StartTime)
 
+	spanCtx := span.SpanContext()
 	zlog.Debug("trace span",
-		zap.String("name", span.Name),
-		zap.Stringer("trace_id", span.TraceID),
-		zap.Stringer("span_id", span.SpanID),
-		zap.Stringer("parent_span_id", span.ParentSpanID),
+		zap.String("name", span.Name()),
+		zap.Stringer("trace_id", spanCtx.TraceID()),
+		zap.Stringer("span_id", spanCtx.SpanID()),
+		zap.Stringer("parent_span_id", span.Parent().SpanID()),
 		zap.Duration("elapsed", elapsed),
-		zap.Reflect("annotations", span.Annotations),
+		zap.Reflect("status", span.Status()),
+		zap.Reflect("events", span.Events()),
+		zap.Reflect("links", span.Links()),
+		zap.Reflect("attributes", span.Attributes()),
 	)
 }
 
-func (exporter *zapExporter) ExportView(data *view.Data) {
-	elapsed := data.End.Sub(data.Start)
+// func (exporter *zapExporter) ExportView(data *view.Data) {
+// 	elapsed := data.End.Sub(data.Start)
 
-	zlog.Debug("view metrics data",
-		zap.Reflect("view", data.View),
-		zap.Reflect("rows", data.Rows),
-		zap.Duration("elapsed", elapsed),
-	)
-}
+// 	zlog.Debug("view metrics data",
+// 		zap.Reflect("view", data.View),
+// 		zap.Reflect("rows", data.Rows),
+// 		zap.Duration("elapsed", elapsed),
+// 	)
+// }

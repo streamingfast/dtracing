@@ -21,16 +21,15 @@ import (
 	"net/url"
 	"os"
 
-	"go.uber.org/zap"
-
-	"contrib.go.opencensus.io/exporter/stackdriver"
-	"contrib.go.opencensus.io/exporter/zipkin"
-	openzipkin "github.com/openzipkin/zipkin-go"
-	zipkinHTTP "github.com/openzipkin/zipkin-go/reporter/http"
-	"go.opencensus.io/trace"
+	texporter "github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/trace"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/stdout/stdouttrace"
+	"go.opentelemetry.io/otel/sdk/resource"
+	"go.opentelemetry.io/otel/sdk/trace"
+	semconv "go.opentelemetry.io/otel/semconv/v1.10.0"
+	ttrace "go.opentelemetry.io/otel/trace"
 )
-
-type TraceAttributes map[string]interface{}
 
 var hostname string
 
@@ -40,30 +39,30 @@ func init() {
 
 // GetTraceID try to find from the context the correct TraceID associated
 // with it. When none is found, returns an randomly generated one.
-func GetTraceID(ctx context.Context) (out trace.TraceID) {
+func GetTraceID(ctx context.Context) (out ttrace.TraceID) {
 	span := trace.FromContext(ctx)
 	if span == nil {
 		return config.Load().(*defaultIDGenerator).NewTraceID()
 	}
 
-	out = span.SpanContext().TraceID
+	out = span.SpanContext().TraceID()
 	return
 }
 
 // NewRandomTraceID returns a random trace ID using OpenCensus default config IDGenerator.
-func NewRandomTraceID() trace.TraceID {
+func NewRandomTraceID() ttrace.TraceID {
 	return config.Load().(*defaultIDGenerator).NewTraceID()
 }
 
 // NewZeroedTraceID returns a mocked, fixed trace ID containing only 0s.
-func NewZeroedTraceID() trace.TraceID {
+func NewZeroedTraceID() ttrace.TraceID {
 	return NewFixedTraceID("00000000000000000000000000000000")
 }
 
 // NewFixedTraceID returns a mocked, fixed trace ID from an hexadecimal string.
 // The string in question must be a valid hexadecimal string containing exactly
 // 32 characters (16 bytes). Any invalid input results in a panic.
-func NewFixedTraceID(hexTraceID string) (out trace.TraceID) {
+func NewFixedTraceID(hexTraceID string) (out ttrace.TraceID) {
 	if len(hexTraceID) != 32 {
 		panic(fmt.Errorf("trace id hexadecimal value should have 32 characters, received %d for %q", len(hexTraceID), hexTraceID))
 	}
@@ -110,121 +109,89 @@ func NewFixedTraceIDInContext(ctx context.Context, hexTraceID string) context.Co
 	return ctx
 }
 
-// SetupTracing make sensible decision to setup tracing exporters based
-// on the environment.
+// SetupTracing sets up tracers based on the `DTRACING` environment variable.
 //
-// If in production, registers the `StackDriver` exporter. It defines two
-// pre-defined attribute for all traces. It defines `serviceName`
-// attribute (receiver in parameter here) and it defiens `pod`
-// which corresponds to `hostname` resolution.
+// Options are:
+//   - stdout://
+//   - cloudtrace://
 //
-// In development, registers exporters based on environment variables
-// "TRACING_ZAP_EXPORTER" (zap exporter) and `TRACING_ZIPKIN_EXPORTER=zipkinURL`
-// for Zipkin exporter.
+// For cloudtrace, the default sampling rate is 0.25, you can specify it with:
+//    cloudtrace://?sample=0.50 (UNIMPLEMENTED!)
 //
-// Options:
-// - A `trace.Sampler` instance: sets `trace` default config `DefaultSampler` value to this value (defaults `1/4.0`)
-// - A `dtracing.TraceAttributes` instance: sets additional StackDriver default attributes (defaults to `nil`)
 func SetupTracing(serviceName string, options ...interface{}) error {
-	sampler := samplerOptionOrDefault(options, trace.ProbabilitySampler(1/4.0))
-	defaultAttributes := traceAttributesOptionOrDefault(options, nil)
+	// FIXME(abourget): is `options` still necessary? We want to keep the abstraction
+	// to ourselves, I know. So let's not pass any `opentelemetry` stuff upstreams?
 
-	if IsProductionEnvironment() {
-		zlog.Info("registering StackDriver exporter")
-		return RegisterStackDriverExporter(serviceName, sampler, stackdriver.Options{
-			DefaultTraceAttributes: defaultAttributes,
-		})
+	conf := os.Getenv("DTRACING")
+	if conf == "" {
+		return nil
 	}
-
-	zlog.Info("registering development exporters from environment variables")
-	return RegisterDevelopmentExportersFromEnv(serviceName, sampler)
-}
-
-// RegisterStackDriverExporter registers the production `StackDriver` exporter
-// for all traces. Uses the `sampler` as the default sampler for all traces.
-// The service name is also added a a label to all traces created.
-func RegisterStackDriverExporter(serviceName string, sampler trace.Sampler, options stackdriver.Options) error {
-	trace.ApplyConfig(trace.Config{DefaultSampler: sampler})
-
-	if options.DefaultTraceAttributes == nil {
-		options.DefaultTraceAttributes = map[string]interface{}{}
-	}
-
-	options.DefaultTraceAttributes["serviceName"] = serviceName
-	options.DefaultTraceAttributes["pod"] = hostname
-
-	zlog.Info("creating StackDriver exporter", zap.Any("default_attributes", options.DefaultTraceAttributes))
-
-	exporter, err := stackdriver.NewExporter(options)
+	u, err := url.Parse(conf)
 	if err != nil {
-		return fmt.Errorf("failed to create StackDriver exporter: %s", err)
+		return fmt.Errorf("parsing env var DTRACING with value %q: %w", conf, err)
 	}
 
-	trace.RegisterExporter(exporter)
-	return nil
-}
-
-// RegisterDevelopmentExportersFromEnv registers exporters based on environment
-// variables "TRACING_ZAP_EXPORTER" (zap exporter) and
-// `TRACING_ZIPKIN_EXPORTER=zipkinURL` for Zipkin exporter.
-func RegisterDevelopmentExportersFromEnv(serviceName string, sampler trace.Sampler) error {
-	trace.ApplyConfig(trace.Config{DefaultSampler: sampler})
-
-	zapExporterEnv := os.Getenv("TRACING_ZAP_EXPORTER")
-	zipkinExporterEnv := os.Getenv("TRACING_ZIPKIN_EXPORTER")
-
-	if zapExporterEnv != "" {
-		zlog.Info("registering zap exporter")
-		RegisterZapExporter()
-	}
-
-	if zipkinExporterEnv != "" {
-		zlog.Info("registering Zipkin exporter", zap.String("url", zipkinExporterEnv))
-		err := RegisterZipkinExporter(serviceName, zipkinExporterEnv)
-		if err != nil {
-			return fmt.Errorf("failed to register ZipKin exporter: %s", err)
-		}
+	switch u.Scheme {
+	case "stdout":
+		registerStdout(serviceName, u)
+	case "cloudtrace":
+		registerCloudTrace(serviceName, u)
+	default:
 	}
 
 	return nil
 }
 
-// RegisterZapExporter registers a Zap exporter that exports all traces
-// to zlog instance of this package.
-func RegisterZapExporter() {
-	exporter := new(zapExporter)
-	trace.RegisterExporter(exporter)
+func registerStdout(serviceName string, u *url.URL) {
+	// FIXME(abourget): have all of this depend on `u`
+
+	exp := stdouttrace.New(
+		stdouttrace.WithWriter(os.Stderr),
+		// Use human readable output.
+		stdouttrace.WithPrettyPrint(),
+		// Do not print timestamps for the demo.
+		stdouttrace.WithoutTimestamps(),
+	)
+
+	res := buildResource(serviceName)
+
+	tp := trace.NewTracerProvider(
+		trace.WithBatcher(exp),
+		trace.WithResource(res),
+	)
+	otel.SetTracerProvider(tp)
 }
 
-// RegisterZipkinExporter registers a ZipKin exporter that exports all traces
-// to a zipkin instance pointed by `zipkinURL`. Note the `zipkinURL` must be
-// the full path of the export function.
-func RegisterZipkinExporter(serviceName string, zipkinURL string) error {
-	_, err := url.Parse(zipkinURL)
+func registerCloudTrace(serviceName string, u *url.URL) {
+	exp, err := texporter.New()
 	if err != nil {
-		return fmt.Errorf("invalid zipkin exporter url: %s", err)
+		return err
 	}
 
-	localEndpoint, err := openzipkin.NewEndpoint(serviceName, "")
-	if err != nil {
-		return fmt.Errorf("unable to create local endpoint: %s", err)
-	}
+	res := buildResource(serviceName)
 
-	reporter := zipkinHTTP.NewReporter(zipkinURL)
-	zipkinExporter := zipkin.NewExporter(reporter, localEndpoint)
+	// FIXME(abourget): use the `sample` querystring param from `u` if specified!
+	sampler := trace.TraceIDRatioBased(1 / 4.0)
 
-	trace.RegisterExporter(zipkinExporter)
-	return nil
+	tp := trace.NewTracerProvider(
+		trace.WithBatcher(exp),
+		trace.WithResource(res),
+		trace.WithSampler(sampler),
+	)
+	otel.SetTracerProvider(tp)
 }
 
-// IsProductionEnvironment determines if we are in a production or
-// a development environment. When file `/.dockerenv` is present,
-// assuming it's production, development otherwise
-func IsProductionEnvironment() bool {
-	gcp := os.Getenv("GOOGLE_APPLICATION_CREDENTIALS")
-	_, err := os.Stat("/.dockerenv")
-
-	return gcp != "" && !os.IsNotExist(err)
+func buildResource(serviceName string) *resource.Resource {
+	res, _ := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes(
+			semconv.SchemaURL,
+			semconv.ServiceNameKey.String(serviceName),
+			//semconv.ServiceVersionKey.String("v0.1.0"),
+			attribute.String("environment", os.Getenv("NAMESPACE") /* that won't work, whatever */),
+		),
+	)
+	return res
 }
 
 func samplerOptionOrDefault(options []interface{}, defaultSampler trace.Sampler) trace.Sampler {
@@ -235,14 +202,4 @@ func samplerOptionOrDefault(options []interface{}, defaultSampler trace.Sampler)
 	}
 
 	return defaultSampler
-}
-
-func traceAttributesOptionOrDefault(options []interface{}, defaultAttributes TraceAttributes) TraceAttributes {
-	for _, option := range options {
-		if attributes, ok := option.(TraceAttributes); ok {
-			return attributes
-		}
-	}
-
-	return defaultAttributes
 }

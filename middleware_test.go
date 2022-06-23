@@ -21,14 +21,13 @@ import (
 	"math/rand"
 	"net/http"
 
-	strackdriverPropagation "contrib.go.opencensus.io/exporter/stackdriver/propagation"
 	"github.com/streamingfast/logging"
-	"go.opencensus.io/trace"
-	"go.opencensus.io/trace/propagation"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/trace"
 	"go.uber.org/zap"
 )
 
-var defaultFormat propagation.HTTPFormat = &strackdriverPropagation.HTTPFormat{}
+var defaultFormat propagation.HTTPFormat = &propagation.HTTPFormat{}
 var traceIDGenerator *defaultIDGenerator
 
 func init() {
