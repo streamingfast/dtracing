@@ -50,6 +50,17 @@ func GetTraceID(ctx context.Context) (out trace.TraceID) {
 	return
 }
 
+// GetTraceIDOrEmpty tries to extract the TraceID from context or returns an
+// empty one otherwise.
+func GetTraceIDOrEmpty(ctx context.Context) (out trace.TraceID) {
+	span := trace.FromContext(ctx)
+	if span != nil {
+		out = span.SpanContext().TraceID
+	}
+
+	return
+}
+
 // NewRandomTraceID returns a random trace ID using OpenCensus default config IDGenerator.
 func NewRandomTraceID() trace.TraceID {
 	return config.Load().(*defaultIDGenerator).NewTraceID()
