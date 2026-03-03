@@ -147,7 +147,7 @@ func SetupTracing(serviceName string, options ...interface{}) error {
 		})
 	}
 
-	zlog.Info("registering development exporters from environment variables")
+	zlog.Debug("registering development exporters from environment variables")
 	return RegisterDevelopmentExportersFromEnv(serviceName, sampler)
 }
 
